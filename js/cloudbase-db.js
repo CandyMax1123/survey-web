@@ -48,6 +48,21 @@ function processData(obj) {
   return result
 }
 
+// CloudBase 将数组以 {"0":...,"1":...} 对象形式存储，读取时还原为数组
+function restoreArrays(obj) {
+  if (obj === null || obj === undefined) return obj
+  if (typeof obj !== 'object' || obj instanceof Date) return obj
+  if (Array.isArray(obj)) return obj.map(restoreArrays)
+  // 判断是否是 CloudBase 存的伪数组：key 全为连续数字字符串
+  const keys = Object.keys(obj)
+  if (keys.length > 0 && keys.every(k => /^\d+$/.test(k)) && keys.map(Number).sort((a,b)=>a-b).every((v,i)=>v===i)) {
+    return keys.map(Number).sort((a,b)=>a-b).map(i => restoreArrays(obj[String(i)]))
+  }
+  const result = {}
+  for (const [k, v] of Object.entries(obj)) result[k] = restoreArrays(v)
+  return result
+}
+
 export function serverTimestamp() {
   return { __type: 'timestamp', value: Date.now() }
 }
@@ -64,10 +79,11 @@ export const db = {
     try {
       const result = await getCdb().collection(collection).doc(id).get()
       const doc = result.data && result.data[0]
+      const restored = doc ? restoreArrays({ ...doc }) : null
       return {
         exists: !!doc,
         id,
-        data() { return doc ? { ...doc } : null }
+        data() { return restored }
       }
     } catch {
       return { exists: false, id, data() { return null } }
@@ -117,7 +133,7 @@ export const db = {
     const result = await query.get()
     return (result.data || []).map(doc => ({
       id: doc._id,
-      data() { return { ...doc } }
+      data() { return restoreArrays({ ...doc }) }
     }))
   }
 }
