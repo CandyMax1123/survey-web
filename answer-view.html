@@ -30,10 +30,10 @@
 
 
 <script type="module">
-  import { db } from './js/cloudbase-db.js'
-  import { requireAdmin } from './js/cloudbase-auth.js'
-  import { getParam, formatDate } from './js/utils.js'
-  import { renderQuestionnaire } from './js/question-renderer.js'
+  import { db } from './js/cloudbase-db.js?v=20260423'
+  import { requireAdmin } from './js/cloudbase-auth.js?v=20260423'
+  import { getParam, formatDate } from './js/utils.js?v=20260423'
+  import { renderQuestionnaire } from './js/question-renderer.js?v=20260423'
 
   const user = await requireAdmin()
   const shareTokenId = getParam('shareTokenId')

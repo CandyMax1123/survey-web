@@ -33,7 +33,7 @@
 <div id="toast-container"></div>
 
 <script type="module">
-  import { loginAdmin, getAdminUser } from './js/cloudbase-auth.js'
+  import { loginAdmin, getAdminUser } from './js/cloudbase-auth.js?v=20260423'
 
   // 已登录则直接跳转（不调用 requireAdmin，避免无限重定向）
   if (getAdminUser()) {

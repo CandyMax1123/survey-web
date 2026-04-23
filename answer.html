@@ -51,10 +51,10 @@
 
 
 <script type="module">
-  import { db, serverTimestamp } from './js/cloudbase-db.js'
-  import { signInAsRespondent } from './js/cloudbase-auth.js'
-  import { showLoading, hideLoading, showToast, getParam, saveDraft, loadDraft, clearDraft, confirm } from './js/utils.js'
-  import { renderQuestionnaire } from './js/question-renderer.js'
+  import { db, serverTimestamp } from './js/cloudbase-db.js?v=20260423'
+  import { signInAsRespondent } from './js/cloudbase-auth.js?v=20260423'
+  import { showLoading, hideLoading, showToast, getParam, saveDraft, loadDraft, clearDraft, confirm } from './js/utils.js?v=20260423'
+  import { renderQuestionnaire } from './js/question-renderer.js?v=20260423'
 
   const token = getParam('token')
   let shareTokenId = ''

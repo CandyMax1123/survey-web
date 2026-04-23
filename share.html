@@ -79,9 +79,9 @@
 
 
 <script type="module">
-  import { db, serverTimestamp } from './js/cloudbase-db.js'
-  import { requireAdmin } from './js/cloudbase-auth.js'
-  import { showLoading, hideLoading, showToast, getParam, generateToken, formatDate, confirm } from './js/utils.js'
+  import { db, serverTimestamp } from './js/cloudbase-db.js?v=20260423'
+  import { requireAdmin } from './js/cloudbase-auth.js?v=20260423'
+  import { showLoading, hideLoading, showToast, getParam, generateToken, formatDate, confirm } from './js/utils.js?v=20260423'
 
   const user = await requireAdmin()
   const questionnaireId = getParam('id')

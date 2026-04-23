@@ -42,9 +42,9 @@
 
 
 <script type="module">
-  import { db, serverTimestamp } from './js/cloudbase-db.js'
-  import { requireAdmin, signOut } from './js/cloudbase-auth.js'
-  import { showLoading, hideLoading, showToast, confirm, formatDate } from './js/utils.js'
+  import { db, serverTimestamp } from './js/cloudbase-db.js?v=20260423'
+  import { requireAdmin, signOut } from './js/cloudbase-auth.js?v=20260423'
+  import { showLoading, hideLoading, showToast, confirm, formatDate } from './js/utils.js?v=20260423'
 
   const user = await requireAdmin()
   document.getElementById('user-email').textContent = user.username || user.email || ''
