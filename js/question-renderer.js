@@ -47,12 +47,14 @@ function buildQuestionBlock(q, value, readonly, index, total, onChange) {
 }
 
 function buildQuestionDesc(q) {
-  if (!q.description) return ''
+  if (!q.description) return null
   const desc = document.createElement('div')
   desc.style.cssText = 'font-size:.85rem;color:var(--text-muted);line-height:1.6;margin-top:4px;margin-bottom:6px;'
   desc.textContent = q.description
   return desc
 }
+
+function requiredMark(q, readonly) {
   if (readonly || q.required === false) return ''
   return '<span class="required">*</span>'
 }
