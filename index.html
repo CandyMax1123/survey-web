@@ -147,62 +147,63 @@
       `
       container.appendChild(card)
     })
+  }
 
-    container.addEventListener('click', async e => {
-      const btn = e.target.closest('[data-action]')
-      if (!btn) return
-      const { action, id, name } = btn.dataset
-      if (action === 'edit') {
-        location.href = `edit.html?id=${id}`
-      } else if (action === 'share') {
-        location.href = `share.html?id=${id}`
-      } else if (action === 'copy') {
+  // 事件委托：只注册一次
+  document.getElementById('questionnaire-list').addEventListener('click', async e => {
+    const btn = e.target.closest('[data-action]')
+    if (!btn || btn.disabled) return
+    const { action, id, name } = btn.dataset
+    if (action === 'edit') {
+      location.href = `edit.html?id=${id}`
+    } else if (action === 'share') {
+      location.href = `share.html?id=${id}`
+    } else if (action === 'copy') {
+      btn.disabled = true
+      showLoading()
+      try {
+        const snap = await db.get('questionnaires', id)
+        if (!snap.exists) { showToast('问卷不存在', 'error'); return }
+        const orig = snap.data()
+        const allList = await db.query('questionnaires', { filters: [{ field: '_adminUid', op: '==', value: user.uid }] })
+        const names = new Set(allList.map(d => d.data().name))
+        let baseName = orig.name || '未命名问卷'
+        const match = baseName.match(/^(.*?)(\d+)$/)
+        let base = match ? match[1] : baseName
+        let num = match ? parseInt(match[2]) + 1 : 2
+        let newName = base + num
+        while (names.has(newName)) { num++; newName = base + num }
+        await db.add('questionnaires', {
+          _adminUid: user.uid,
+          name: newName,
+          description: orig.description || '',
+          questions: orig.questions || [],
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        })
+        showToast(`已复制为「${newName}」`, 'success')
+        await loadQuestionnaires()
+      } catch(err) {
+        showToast('复制失败', 'error')
+        btn.disabled = false
+      } finally {
+        hideLoading()
+      }
+    } else if (action === 'delete') {
+      if (await confirm(`确定删除问卷「${name || ''}」？此操作不可撤销。`, '删除', '取消', true)) {
         showLoading()
         try {
-          const snap = await db.get('questionnaires', id)
-          if (!snap.exists) { showToast('问卷不存在', 'error'); return }
-          const orig = snap.data()
-          // 生成不重复的名称：原名后加 2，如已有数字则递增
-          const allList = await db.query('questionnaires', { filters: [{ field: '_adminUid', op: '==', value: user.uid }] })
-          const names = new Set(allList.map(d => d.data().name))
-          let baseName = orig.name || '未命名问卷'
-          // 去掉末尾已有的数字后缀
-          const match = baseName.match(/^(.*?)(\d+)$/)
-          let base = match ? match[1] : baseName
-          let num = match ? parseInt(match[2]) + 1 : 2
-          let newName = base + num
-          while (names.has(newName)) { num++; newName = base + num }
-          await db.add('questionnaires', {
-            _adminUid: user.uid,
-            name: newName,
-            description: orig.description || '',
-            questions: orig.questions || [],
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          })
-          showToast(`已复制为「${newName}」`, 'success')
+          await db.delete('questionnaires', id)
+          showToast('已删除', 'success')
           await loadQuestionnaires()
         } catch(err) {
-          showToast('复制失败', 'error')
+          showToast('删除失败', 'error')
         } finally {
           hideLoading()
         }
-      } else if (action === 'delete') {
-        if (await confirm(`确定删除问卷「${name || ''}」？此操作不可撤销。`, '删除', '取消', true)) {
-          showLoading()
-          try {
-            await db.delete('questionnaires', id)
-            showToast('已删除', 'success')
-            await loadQuestionnaires()
-          } catch(err) {
-            showToast('删除失败', 'error')
-          } finally {
-            hideLoading()
-          }
-        }
       }
-    })
-  }
+    }
+  })
 
   function escHtml(str) {
     return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
