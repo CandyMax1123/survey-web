@@ -76,7 +76,15 @@ export const db = {
 
   async update(collection, id, fields) {
     await ensureAuth()
-    await getCdb().collection(collection).doc(id).update(processData(fields))
+    const cdb = getCdb()
+    const _ = cdb.command
+    const processed = processData(fields)
+    // 对数组字段使用 _.set() 强制整体替换，避免 CloudBase 部分更新导致嵌套字段丢失
+    const updateData = {}
+    for (const [k, v] of Object.entries(processed)) {
+      updateData[k] = Array.isArray(v) ? _.set(v) : v
+    }
+    await cdb.collection(collection).doc(id).update(updateData)
   },
 
   async delete(collection, id) {
