@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>登录 — 问卷系统</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div class="login-page">
+  <div class="login-card">
+    <div class="login-title">📋 问卷系统</div>
+    <div class="login-sub">管理员登录</div>
+
+    <div id="form-login">
+      <div class="form-group">
+        <label class="form-label">用户名</label>
+        <input class="form-input" type="text" id="login-email" placeholder="请输入用户名" autocomplete="username" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">密码</label>
+        <input class="form-input" type="password" id="login-pwd" placeholder="请输入密码" autocomplete="current-password" />
+      </div>
+      <button class="btn btn-primary btn-block" id="btn-login">登录</button>
+    </div>
+
+    <div id="auth-error" style="display:none;margin-top:12px;color:var(--danger);font-size:.875rem;text-align:center;"></div>
+  </div>
+</div>
+
+<div id="loading-overlay" class="hidden"><div class="spinner"></div></div>
+<div id="toast-container"></div>
+
+<script src="js/cloudbase.full.js"></script>
+<script>
+  const ENV_ID = 'candymaxserver-d2gt2bl4j640d935a'
+  let _auth = null
+
+  function waitForSDK(cb) {
+    if (window.cloudbase || window.tcb) { cb(); return }
+    let tries = 0
+    const t = setInterval(() => {
+      tries++
+      if (window.cloudbase || window.tcb) { clearInterval(t); cb() }
+      else if (tries > 40) { clearInterval(t); showError('SDK 加载超时，请刷新') }
+    }, 100)
+  }
+
+  function getAuth() {
+    if (_auth) return _auth
+    const sdk = window.cloudbase || window.tcb
+    const app = sdk.init({ env: ENV_ID })
+    _auth = app.auth({ persistence: 'local' })
+    return _auth
+  }
+
+  function showError(msg) {
+    const el = document.getElementById('auth-error')
+    el.textContent = msg
+    el.style.display = 'block'
+  }
+  function clearError() {
+    document.getElementById('auth-error').style.display = 'none'
+  }
+  function showLoading() {
+    document.getElementById('loading-overlay').classList.remove('hidden')
+  }
+  function hideLoading() {
+    document.getElementById('loading-overlay').classList.add('hidden')
+  }
+
+  document.getElementById('btn-login').addEventListener('click', () => {
+    clearError()
+    const username = document.getElementById('login-email').value.trim()
+    const pwd = document.getElementById('login-pwd').value
+    if (!username || !pwd) { showError('请填写用户名和密码'); return }
+    showLoading()
+    waitForSDK(async () => {
+      try {
+        const auth = getAuth()
+        await auth.signInWithUsernameAndPassword(username, pwd)
+        location.href = 'index.html'
+      } catch(e) {
+        console.error(e)
+        showError(e.message || '登录失败，请检查用户名和密码')
+      } finally {
+        hideLoading()
+      }
+    })
+  })
+
+  document.getElementById('login-pwd').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('btn-login').click()
+  })
+
+  // SDK 加载完后检查登录态
+  waitForSDK(async () => {
+    try {
+      const auth = getAuth()
+      const loginState = await auth.getLoginState()
+      if (loginState && !loginState.isAnonymous) {
+        location.href = 'index.html'
+      }
+    } catch(e) {}
+  })
+</script>
+</body>
+</html>

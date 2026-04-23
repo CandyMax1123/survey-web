@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>移动操作测试</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+    .pass { color: #4ec9b0; } .fail { color: #f44747; } .info { color: #9cdcfe; }
+    pre { margin: 2px 0; }
+  </style>
+</head>
+<body>
+<h2 style="color:#569cd6;">移动 & 拖拽排序逻辑测试</h2>
+<div id="log"></div>
+<script type="module">
+  const log = document.getElementById('log')
+  let passed = 0, failed = 0
+
+  function print(msg, cls = '') { const p = document.createElement('pre'); p.className = cls; p.textContent = msg; log.appendChild(p) }
+  function ok(label) { print(`✓ ${label}`, 'pass'); passed++ }
+  function fail(label, reason='') { print(`✗ ${label}${reason ? ' — '+reason : ''}`, 'fail'); failed++ }
+  function section(t) { print(`\n── ${t} ──`, 'info') }
+
+  // ===== 模拟 state 和 moveQuestion =====
+  function makeState(n) {
+    return Array.from({length: n}, (_, i) => ({ id: 'q'+i, title: '题目'+(i+1), order: i }))
+  }
+
+  function moveQuestion(questions, fromIdx, toIdx) {
+    if (toIdx < 0 || toIdx >= questions.length) return false
+    const [moved] = questions.splice(fromIdx, 1)
+    questions.splice(toIdx, 0, moved)
+    questions.forEach((q, i) => q.order = i)
+    return true
+  }
+
+  // ===== 边界检测 =====
+  function simulateDragDrop(questions, fromIdx, targetIdx) {
+    // 模拟拖拽：从 fromIdx 拖到 targetIdx 前面
+    if (fromIdx === targetIdx) return
+    const [moved] = questions.splice(fromIdx, 1)
+    questions.splice(targetIdx, 0, moved)
+    questions.forEach((q, i) => q.order = i)
+  }
+
+  function names(qs) { return qs.map(q => q.title).join(',') }
+
+  section('1. 上移按钮')
+
+  let q = makeState(4)
+  moveQuestion(q, 1, 0)
+  names(q) === '题目2,题目1,题目3,题目4' ? ok('Q2 上移到第一位') : fail('Q2 上移', names(q))
+
+  q = makeState(4)
+  moveQuestion(q, 3, 2)
+  names(q) === '题目1,题目2,题目4,题目3' ? ok('Q4 上移一位') : fail('Q4 上移', names(q))
+
+  q = makeState(4)
+  const result = moveQuestion(q, 0, -1)
+  result === false ? ok('第一题上移返回 false（边界保护）') : fail('第一题上移边界', result)
+  names(q) === '题目1,题目2,题目3,题目4' ? ok('第一题上移后顺序不变') : fail('第一题上移后顺序', names(q))
+
+  section('2. 下移按钮')
+
+  q = makeState(4)
+  moveQuestion(q, 0, 1)
+  names(q) === '题目2,题目1,题目3,题目4' ? ok('Q1 下移一位') : fail('Q1 下移', names(q))
+
+  q = makeState(4)
+  moveQuestion(q, 2, 3)
+  names(q) === '题目1,题目2,题目4,题目3' ? ok('Q3 下移到最后') : fail('Q3 下移', names(q))
+
+  q = makeState(4)
+  const r2 = moveQuestion(q, 3, 4)
+  r2 === false ? ok('最后一题下移返回 false（边界保护）') : fail('最后一题下移边界', r2)
+  names(q) === '题目1,题目2,题目3,题目4' ? ok('最后一题下移后顺序不变') : fail('最后一题下移后顺序', names(q))
+
+  section('3. 多次点击移动')
+
+  q = makeState(5)
+  // Q5 连续上移 4 次 → 到第一位
+  for (let i = 4; i > 0; i--) moveQuestion(q, i, i-1)
+  names(q) === '题目5,题目1,题目2,题目3,题目4' ? ok('Q5 连续上移 4 次到第一位') : fail('Q5 连续上移', names(q))
+
+  q = makeState(5)
+  // Q1 连续下移 4 次 → 到最后
+  for (let i = 0; i < 4; i++) moveQuestion(q, i, i+1)
+  names(q) === '题目2,题目3,题目4,题目5,题目1' ? ok('Q1 连续下移 4 次到最后') : fail('Q1 连续下移', names(q))
+
+  section('4. order 字段同步')
+
+  q = makeState(4)
+  moveQuestion(q, 2, 0)
+  const orders = q.map(x => x.order)
+  JSON.stringify(orders) === '[0,1,2,3]' ? ok('移动后 order 字段重新编号') : fail('order 字段', JSON.stringify(orders))
+
+  section('5. 拖拽排序逻辑')
+
+  q = makeState(4)
+  simulateDragDrop(q, 3, 0) // 拖最后一个到最前面
+  names(q) === '题目4,题目1,题目2,题目3' ? ok('拖拽: 最后一题到第一位') : fail('拖拽最后到最前', names(q))
+
+  q = makeState(4)
+  simulateDragDrop(q, 0, 3) // 拖第一个到最后
+  names(q) === '题目2,题目3,题目4,题目1' ? ok('拖拽: 第一题到最后') : fail('拖拽第一到最后', names(q))
+
+  q = makeState(4)
+  simulateDragDrop(q, 1, 3) // 拖第二个到第四位前面
+  names(q) === '题目1,题目3,题目2,题目4' ? ok('拖拽: Q2 到 Q4 前面') : fail('拖拽Q2到Q4前', names(q))
+
+  q = makeState(4)
+  simulateDragDrop(q, 2, 2) // 原地不动
+  names(q) === '题目1,题目2,题目3,题目4' ? ok('拖拽: 原位不变') : fail('拖拽原位', names(q))
+
+  section('6. 单题边界')
+
+  q = makeState(1)
+  const r3 = moveQuestion(q, 0, -1)
+  const r4 = moveQuestion(q, 0, 1)
+  r3 === false && r4 === false ? ok('单题上下移都返回 false') : fail('单题边界', `up=${r3} down=${r4}`)
+
+  section('结果')
+  print(`\n通过: ${passed}  失败: ${failed}`, failed === 0 ? 'pass' : 'fail')
+  if (failed === 0) print('🎉 所有移动测试通过！', 'pass')
+</script>
+</body>
+</html>

@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>我的问卷</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<nav class="nav-bar">
+  <div class="nav-inner">
+    <span class="nav-title">📋 我的问卷</span>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-plain btn-sm" id="btn-export">导出数据</button>
+      <label class="btn btn-plain btn-sm" id="btn-import-label" style="cursor:pointer;margin:0;">导入数据<input type="file" id="btn-import" accept=".json" style="display:none;"></label>
+      <button class="btn btn-plain btn-sm" id="btn-logout">退出</button>
+    </div>
+  </div>
+</nav>
+
+<div class="page-container">
+  <div class="page-header">
+    <div>
+      <div class="page-title">问卷列表</div>
+      <div class="page-subtitle" id="user-email"></div>
+    </div>
+    <button class="btn btn-primary" id="btn-new">＋ 新建问卷</button>
+  </div>
+
+  <div id="questionnaire-list">
+    <div class="empty-state">
+      <div class="spinner" style="margin:0 auto 16px;"></div>
+      <div class="empty-state-text">加载中...</div>
+    </div>
+  </div>
+</div>
+
+<div id="loading-overlay" class="hidden"><div class="spinner"></div></div>
+<div id="toast-container"></div>
+
+
+<script type="module">
+  import { db } from './js/local-db.js'
+  import { requireAdmin, signOut } from './js/local-auth.js'
+  import { showLoading, hideLoading, showToast, confirm, formatDate } from './js/utils.js'
+
+  const user = await requireAdmin()
+  document.getElementById('user-email').textContent = user.username || user.email || ''
+
+  document.getElementById('btn-logout').addEventListener('click', async () => {
+    if (await confirm('确定退出登录？')) {
+      await signOut()
+      location.href = 'admin.html'
+    }
+  })
+
+  // 导出数据
+  document.getElementById('btn-export').addEventListener('click', () => {
+    const collections = ['questionnaires', 'share_tokens', 'answers']
+    const data = {}
+    collections.forEach(col => {
+      try { data[col] = JSON.parse(localStorage.getItem('db_' + col) || '[]') } catch { data[col] = [] }
+    })
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `survey-backup-${new Date().toISOString().slice(0,10)}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+    showToast('数据已导出', 'success')
+  })
+
+  // 导入数据
+  document.getElementById('btn-import').addEventListener('change', async e => {
+    const file = e.target.files[0]
+    if (!file) return
+    const ok = await confirm('导入会覆盖当前所有数据，确定继续？', '确定导入', '取消', true)
+    if (!ok) { e.target.value = ''; return }
+    try {
+      const text = await file.text()
+      const data = JSON.parse(text)
+      const collections = ['questionnaires', 'share_tokens', 'answers']
+      collections.forEach(col => {
+        if (Array.isArray(data[col])) {
+          localStorage.setItem('db_' + col, JSON.stringify(data[col]))
+        }
+      })
+      showToast('导入成功', 'success')
+      await loadQuestionnaires()
+    } catch(e) {
+      showToast('导入失败，文件格式有误', 'error')
+    } finally {
+      e.target.value = ''
+    }
+  })
+
+  document.getElementById('btn-new').addEventListener('click', () => {
+    location.href = 'edit.html'
+  })
+
+  async function loadQuestionnaires() {
+    try {
+      const list = await db.query('questionnaires', {
+        filters: [{ field: '_adminUid', op: '==', value: user.uid }],
+        orderBy: { field: 'createdAt', desc: true }
+      })
+      renderList(list.map(d => ({ id: d.id, ...d.data() })))
+    } catch(e) {
+      console.error(e)
+      document.getElementById('questionnaire-list').innerHTML =
+        '<div class="empty-state"><div class="empty-state-text" style="color:var(--danger)">加载失败，请刷新重试</div></div>'
+    }
+  }
+
+  function renderList(list) {
+    const container = document.getElementById('questionnaire-list')
+    if (list.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">📋</div>
+          <div class="empty-state-text">暂无问卷，点击右上角新建</div>
+        </div>
+      `
+      return
+    }
+    container.innerHTML = ''
+    list.forEach(q => {
+      const card = document.createElement('div')
+      card.className = 'card'
+      card.innerHTML = `
+        <div style="margin-bottom:8px;">
+          <div style="font-size:1.05rem;font-weight:600;color:var(--text);margin-bottom:4px;">${escHtml(q.name || '（未命名问卷）')}</div>
+          ${q.description ? `<div style="font-size:.875rem;color:var(--text-muted);line-height:1.5;">${escHtml(q.description)}</div>` : ''}
+        </div>
+        <div style="font-size:.8rem;color:var(--text-light);margin-bottom:12px;">
+          共 ${q.questions ? q.questions.length : 0} 题 &nbsp;·&nbsp; ${formatDate(q.createdAt)}
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-ghost btn-sm" data-action="edit" data-id="${q.id}">编辑问卷</button>
+          <button class="btn btn-sm" style="background:var(--success-light);color:#16A34A;" data-action="share" data-id="${q.id}">分享管理</button>
+          <button class="btn btn-sm" style="background:var(--danger-light);color:var(--danger);" data-action="delete" data-id="${q.id}" data-name="${escHtml(q.name || '')}">删除</button>
+        </div>
+      `
+      container.appendChild(card)
+    })
+
+    container.addEventListener('click', async e => {
+      const btn = e.target.closest('[data-action]')
+      if (!btn) return
+      const { action, id, name } = btn.dataset
+      if (action === 'edit') {
+        location.href = `edit.html?id=${id}`
+      } else if (action === 'share') {
+        location.href = `share.html?id=${id}`
+      } else if (action === 'delete') {
+        if (await confirm(`确定删除问卷「${name || ''}」？此操作不可撤销。`, '删除', '取消', true)) {
+          showLoading()
+          try {
+            await db.delete('questionnaires', id)
+            showToast('已删除', 'success')
+            await loadQuestionnaires()
+          } catch(err) {
+            showToast('删除失败', 'error')
+          } finally {
+            hideLoading()
+          }
+        }
+      }
+    })
+  }
+
+  function escHtml(str) {
+    return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+  }
+
+  loadQuestionnaires()
+</script>
+</body>
+</html>

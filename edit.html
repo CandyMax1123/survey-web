@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>编辑问卷</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <style>
+    .q-edit-card {
+      background: var(--card-bg);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 12px;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+      cursor: grab;
+      user-select: none;
+    }
+    .q-edit-card:active { cursor: grabbing; }
+    .q-edit-card.dragging { opacity: .3; }
+    .q-edit-card.drag-over { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(79,110,247,.25); }
+    #drag-placeholder {
+      background: var(--primary-light);
+      border: 2px dashed var(--primary);
+      border-radius: var(--radius);
+      margin-bottom: 12px;
+    }
+    .q-edit-controls {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 10px;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+    }
+    .q-edit-label {
+      font-size: .78rem;
+      color: var(--text-muted);
+      font-weight: 600;
+      flex: 1;
+    }
+    .q-edit-actions {
+      display: flex;
+      gap: 5px;
+      flex-shrink: 0;
+    }
+    .q-edit-actions button {
+      cursor: pointer;
+    }
+    .q-edit-card .question-block { margin-bottom: 0; box-shadow: none; border-radius: 0; }
+    .q-edit-card .q-seq { display: none; }
+    .q-edit-preview { pointer-events: none; padding: 2px 4px 4px; }
+    #drag-ghost {
+      border-radius: var(--radius);
+      overflow: hidden;
+      transform: rotate(1deg);
+      opacity: .9;
+      box-shadow: 0 10px 30px rgba(0,0,0,.2);
+    }
+  </style>
+</head>
+<body>
+
+<nav class="nav-bar">
+  <div class="nav-inner">
+    <button class="nav-back" onclick="history.back()">&#8592; 返回</button>
+    <span class="nav-title" id="nav-title">编辑问卷</span>
+    <button class="btn btn-primary btn-sm" id="btn-save-top">保存</button>
+  </div>
+</nav>
+
+<div class="page-container">
+  <div class="card" style="margin-top:16px;">
+    <div class="form-group">
+      <label class="form-label">问卷名称 <span class="required">*</span></label>
+      <input class="form-input" type="text" id="q-name" placeholder="请输入问卷名称" maxlength="80" />
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+      <label class="form-label">问卷说明 <span class="hint">（选填）</span></label>
+      <textarea class="form-textarea" id="q-desc" placeholder="请输入问卷说明" maxlength="300"></textarea>
+    </div>
+  </div>
+
+  <div style="display:flex;justify-content:space-between;align-items:center;margin:16px 0 10px;">
+    <div style="font-size:1rem;font-weight:600;">题目列表 <span id="q-count" style="color:var(--text-muted);font-size:.85rem;"></span></div>
+    <span style="font-size:.78rem;color:var(--text-light);">按住卡片可拖拽排序</span>
+  </div>
+
+  <div id="questions-list"></div>
+
+  <button class="btn btn-block" style="background:#fff;border:1.5px dashed var(--primary);color:var(--primary);margin-bottom:12px;" id="btn-add-question">＋ 添加题目</button>
+  <button class="btn btn-primary btn-block" id="btn-save-bottom" style="margin-bottom:32px;">保存问卷</button>
+</div>
+
+<!-- 题目编辑 Modal -->
+<div id="modal-overlay" class="modal-overlay" style="display:none;">
+  <div class="modal-box">
+    <div class="modal-handle"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <div class="modal-title" id="modal-heading" style="margin-bottom:0;">添加题目</div>
+      <button id="modal-close" style="background:none;border:none;font-size:1.4rem;color:var(--text-muted);cursor:pointer;padding:4px;">×</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">题目类型</label>
+      <select class="form-select" id="q-type">
+        <option value="single_choice">单选</option>
+        <option value="multiple_choice">多选</option>
+        <option value="matrix_single">矩阵单选（每行选一个程度）</option>
+        <option value="text_fill">填空</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">题目标题 <span class="required">*</span></label>
+      <textarea class="form-textarea" id="q-title" placeholder="请输入题目内容" maxlength="300" style="min-height:72px;"></textarea>
+    </div>
+    <div class="form-group" style="margin-bottom:12px;">
+      <label class="form-label">是否必填</label>
+      <div style="display:flex;gap:10px;">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.95rem;">
+          <input type="radio" name="q-required" id="q-required-yes" value="1" checked style="accent-color:var(--primary);width:16px;height:16px;" />
+          必选
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.95rem;">
+          <input type="radio" name="q-required" id="q-required-no" value="0" style="accent-color:var(--primary);width:16px;height:16px;" />
+          选填
+        </label>
+      </div>
+    </div>
+    <div id="section-options">
+      <div class="form-label" style="margin-bottom:8px;">选项列表</div>
+      <div id="options-list"></div>
+      <button class="btn btn-plain btn-sm" id="btn-add-option" style="margin-top:4px;">＋ 添加选项</button>
+    </div>
+    <div id="section-matrix" style="display:none;">
+      <div class="form-label" style="margin-bottom:8px;">子项（行）</div>
+      <div id="rows-list"></div>
+      <button class="btn btn-plain btn-sm" id="btn-add-row" style="margin-bottom:16px;">＋ 添加子项</button>
+      <div class="form-label" style="margin-bottom:8px;">程度选项（列）</div>
+      <div id="cols-list"></div>
+      <button class="btn btn-plain btn-sm" id="btn-add-col">＋ 添加程度选项</button>
+    </div>
+    <div id="section-fill-hint" style="display:none;">
+      <div class="card" style="background:var(--bg);box-shadow:none;border:1.5px solid var(--border);">
+        <div style="color:var(--text-muted);font-size:.9rem;">填空题：被分享者将看到一个文本输入框，可以自由填写文字。</div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-plain" id="btn-cancel-question">取消</button>
+      <button class="btn btn-primary" id="btn-save-question">保存题目</button>
+    </div>
+  </div>
+</div>
+
+<div id="loading-overlay" class="hidden"><div class="spinner"></div></div>
+<div id="toast-container"></div>
+
+
+<script type="module">
+  import { db, serverTimestamp } from './js/local-db.js'
+  import { requireAdmin } from './js/local-auth.js'
+  import { showLoading, hideLoading, showToast, getParam, generateId, TYPE_LABELS } from './js/utils.js'
+  import { renderQuestionnaire } from './js/question-renderer.js'
+
+  const user = await requireAdmin()
+  const questionnaireId = getParam('id')
+  const isNew = !questionnaireId
+
+  document.getElementById('nav-title').textContent = isNew ? '新建问卷' : '编辑问卷'
+
+  const state = { questions: [] }
+
+  // ===== 加载已有问卷 =====
+  if (!isNew) {
+    showLoading()
+    try {
+      const snap = await db.get('questionnaires', questionnaireId)
+      if (!snap.exists || snap.data()._adminUid !== user.uid) {
+        showToast('问卷不存在或无权限', 'error')
+        setTimeout(() => location.href = 'index.html', 1500)
+      } else {
+        const data = snap.data()
+        document.getElementById('q-name').value = data.name || ''
+        document.getElementById('q-desc').value = data.description || ''
+        state.questions = data.questions || []
+        renderQuestionsList()
+      }
+    } catch(e) { showToast('加载失败', 'error') }
+    finally { hideLoading() }
+  }
+
+  // ===== 保存问卷 =====
+  document.getElementById('btn-save-top').addEventListener('click', saveQuestionnaire)
+  document.getElementById('btn-save-bottom').addEventListener('click', saveQuestionnaire)
+
+  async function saveQuestionnaire() {
+    const name = document.getElementById('q-name').value.trim()
+    const description = document.getElementById('q-desc').value.trim()
+    if (!name) { showToast('请填写问卷名称', 'error'); document.getElementById('q-name').focus(); return }
+    if (state.questions.length === 0) { showToast('请至少添加一道题目', 'error'); return }
+    showLoading()
+    try {
+      const data = { _adminUid: user.uid, name, description, questions: state.questions, updatedAt: serverTimestamp() }
+      if (isNew) { data.createdAt = serverTimestamp(); await db.add('questionnaires', data) }
+      else { await db.update('questionnaires', questionnaireId, data) }
+      showToast('保存成功', 'success')
+      setTimeout(() => location.href = 'index.html', 800)
+    } catch(e) { showToast('保存失败：' + e.message, 'error') }
+    finally { hideLoading() }
+  }
+
+  // ===== 移动题目 =====
+  function moveQuestion(fromIdx, toIdx) {
+    if (toIdx < 0 || toIdx >= state.questions.length) return
+    const [moved] = state.questions.splice(fromIdx, 1)
+    state.questions.splice(toIdx, 0, moved)
+    state.questions.forEach((q, i) => q.order = i)
+    renderQuestionsList()
+  }
+
+  // ===== 题目列表渲染 =====
+  function renderQuestionsList() {
+    const container = document.getElementById('questions-list')
+    document.getElementById('q-count').textContent = `（${state.questions.length} 题）`
+
+    if (state.questions.length === 0) {
+      container.innerHTML = `<div class="card" style="text-align:center;color:var(--text-muted);padding:32px;">暂无题目，点击下方添加</div>`
+      return
+    }
+
+    container.innerHTML = ''
+    state.questions.forEach((q, i) => container.appendChild(buildEditCard(q, i)))
+    initDragSort(container)
+  }
+
+  function buildEditCard(q, i) {
+    const total = state.questions.length
+    const card = document.createElement('div')
+    card.className = 'q-edit-card'
+    card.dataset.idx = String(i)
+
+    // 控制栏：标签在左，按钮在右
+    const controls = document.createElement('div')
+    controls.className = 'q-edit-controls'
+    controls.innerHTML = `
+      <span class="q-edit-label">Q${i+1} · <span style="color:${q.required === false ? 'var(--text-muted)' : 'var(--danger)'};">${q.required === false ? '选填' : '必选'}</span></span>
+      <div class="q-edit-actions">
+        <button class="btn btn-plain btn-sm" data-action="up"   data-idx="${i}" ${i === 0 ? 'disabled' : ''} title="上移">↑</button>
+        <button class="btn btn-plain btn-sm" data-action="down" data-idx="${i}" ${i === total-1 ? 'disabled' : ''} title="下移">↓</button>
+        <button class="btn btn-ghost btn-sm" data-action="edit" data-idx="${i}">编辑</button>
+        <button class="btn btn-sm" style="background:var(--danger-light);color:var(--danger);" data-action="del" data-idx="${i}">删除</button>
+      </div>
+    `
+
+    controls.querySelector('[data-action="up"]').addEventListener('click', e => {
+      e.stopPropagation(); moveQuestion(i, i - 1)
+    })
+    controls.querySelector('[data-action="down"]').addEventListener('click', e => {
+      e.stopPropagation(); moveQuestion(i, i + 1)
+    })
+    controls.querySelector('[data-action="edit"]').addEventListener('click', e => {
+      e.stopPropagation(); openModal(state.questions[i], i)
+    })
+    controls.querySelector('[data-action="del"]').addEventListener('click', e => {
+      e.stopPropagation()
+      if (window.confirm('确定删除这道题目？')) {
+        state.questions.splice(i, 1)
+        state.questions.forEach((q, idx) => q.order = idx)
+        renderQuestionsList()
+      }
+    })
+
+    card.appendChild(controls)
+
+    // 题目预览（只读真实样式，点击不触发）
+    const preview = document.createElement('div')
+    preview.className = 'q-edit-preview'
+    renderQuestionnaire(preview, [q], {}, true, null)
+    card.appendChild(preview)
+
+    return card
+  }
+
+  // ===== 拖拽排序 =====
+  let dragSrcIdx = null
+  let placeholder = null
+  let ghost = null
+  let ghostOffsetY = 0
+  let dragging = false
+  let longPressTimer = null
+
+  function initDragSort(container) {
+    container.querySelectorAll('.q-edit-card').forEach(card => {
+      // 鼠标：直接按住（非按钮区域）即可拖拽
+      card.addEventListener('mousedown', e => {
+        if (e.target.closest('button')) return
+        e.preventDefault()
+        startDrag(e.clientY, card, container)
+      })
+
+      // 触摸：长按 350ms 启动拖拽
+      card.addEventListener('touchstart', e => {
+        if (e.target.closest('button')) return
+        const touch = e.touches[0]
+        longPressTimer = setTimeout(() => {
+          startDrag(touch.clientY, card, container, true)
+        }, 350)
+      }, { passive: true })
+
+      card.addEventListener('touchmove', () => clearTimeout(longPressTimer), { passive: true })
+      card.addEventListener('touchend', () => clearTimeout(longPressTimer))
+    })
+  }
+
+  function startDrag(clientY, card, container, isTouch = false) {
+    dragSrcIdx = parseInt(card.dataset.idx)
+    dragging = true
+
+    const rect = card.getBoundingClientRect()
+    ghostOffsetY = clientY - rect.top
+
+    // 幽灵元素
+    ghost = card.cloneNode(true)
+    ghost.id = 'drag-ghost'
+    ghost.style.cssText = `
+      position:fixed; left:${rect.left}px; top:${rect.top}px;
+      width:${rect.width}px; z-index:9999; pointer-events:none;
+    `
+    document.body.appendChild(ghost)
+
+    // 占位符
+    placeholder = document.createElement('div')
+    placeholder.id = 'drag-placeholder'
+    placeholder.style.height = rect.height + 'px'
+    card.classList.add('dragging')
+    card.after(placeholder)
+
+    if (!isTouch) {
+      document.addEventListener('mousemove', onMouseMove)
+      document.addEventListener('mouseup', onDragEnd)
+    } else {
+      document.addEventListener('touchmove', onTouchMove, { passive: false })
+      document.addEventListener('touchend', onDragEnd)
+    }
+  }
+
+  function onMouseMove(e) {
+    if (!dragging) return
+    moveGhost(e.clientY)
+    movePlaceholder(e.clientY)
+  }
+
+  function onTouchMove(e) {
+    if (!dragging) return
+    e.preventDefault()
+    const y = e.touches[0].clientY
+    moveGhost(y)
+    movePlaceholder(y)
+  }
+
+  function moveGhost(clientY) {
+    if (ghost) ghost.style.top = (clientY - ghostOffsetY) + 'px'
+  }
+
+  function movePlaceholder(clientY) {
+    if (!placeholder) return
+    const cards = [...document.querySelectorAll('.q-edit-card:not(.dragging)')]
+    let placed = false
+    for (const card of cards) {
+      const rect = card.getBoundingClientRect()
+      if (clientY < rect.top + rect.height / 2) {
+        card.before(placeholder)
+        placed = true
+        break
+      }
+    }
+    if (!placed && cards.length > 0) cards[cards.length - 1].after(placeholder)
+  }
+
+  function onDragEnd() {
+    dragging = false
+    clearTimeout(longPressTimer)
+    document.removeEventListener('mousemove', onMouseMove)
+    document.removeEventListener('mouseup', onDragEnd)
+    document.removeEventListener('touchmove', onTouchMove)
+    document.removeEventListener('touchend', onDragEnd)
+
+    if (ghost) { ghost.remove(); ghost = null }
+
+    if (placeholder && dragSrcIdx !== null) {
+      // 计算占位符前有多少个非拖拽卡片 → 得到 targetIdx
+      const container = document.getElementById('questions-list')
+      let targetIdx = 0
+      for (const child of container.children) {
+        if (child === placeholder) break
+        if (child.classList.contains('q-edit-card') && !child.classList.contains('dragging')) {
+          targetIdx++
+        }
+      }
+
+      placeholder.remove()
+      placeholder = null
+
+      if (targetIdx !== dragSrcIdx) {
+        const [moved] = state.questions.splice(dragSrcIdx, 1)
+        state.questions.splice(targetIdx, 0, moved)
+        state.questions.forEach((q, i) => q.order = i)
+      }
+    }
+
+    dragSrcIdx = null
+    renderQuestionsList()
+  }
+
+  // ===== Modal 逻辑 =====
+  let _currentQuestion = null
+  let _editingIndex = -1
+
+  function openModal(question, index) {
+    _editingIndex = index !== undefined ? index : -1
+    _currentQuestion = question
+      ? JSON.parse(JSON.stringify(question))
+      : { id: generateId(), type: 'single_choice', title: '', required: true, options: ['', ''], rows: ['', ''], columns: ['非常好', '好', '一般', '差'] }
+
+    document.getElementById('modal-heading').textContent = _editingIndex >= 0 ? '编辑题目' : '添加题目'
+    document.getElementById('q-type').value = _currentQuestion.type
+    document.getElementById('q-title').value = _currentQuestion.title || ''
+    document.getElementById('q-required-yes').checked = _currentQuestion.required !== false
+    document.getElementById('q-required-no').checked = _currentQuestion.required === false
+    syncTypeVisibility(_currentQuestion.type)
+    renderOptions(); renderRows(); renderCols()
+
+    document.getElementById('modal-overlay').style.display = 'flex'
+    setTimeout(() => document.getElementById('q-title').focus(), 50)
+  }
+
+  function closeModal() {
+    document.getElementById('modal-overlay').style.display = 'none'
+    _currentQuestion = null; _editingIndex = -1
+  }
+
+  function syncTypeVisibility(type) {
+    document.getElementById('section-options').style.display = (type === 'single_choice' || type === 'multiple_choice') ? '' : 'none'
+    document.getElementById('section-matrix').style.display = type === 'matrix_single' ? '' : 'none'
+    document.getElementById('section-fill-hint').style.display = type === 'text_fill' ? '' : 'none'
+  }
+
+  function renderOptions() {
+    const c = document.getElementById('options-list'); c.innerHTML = ''
+    ;(_currentQuestion.options || []).forEach((opt, i) => {
+      const row = document.createElement('div'); row.className = 'option-edit-row'
+      row.innerHTML = `<span style="color:var(--text-muted);font-size:.85rem;width:20px;flex-shrink:0;">${i+1}.</span>
+        <input class="form-input" type="text" value="${escHtml(opt)}" placeholder="选项内容" />
+        <button class="btn-icon">×</button>`
+      row.querySelector('input').addEventListener('input', e => { _currentQuestion.options[i] = e.target.value })
+      row.querySelector('.btn-icon').addEventListener('click', () => {
+        if (_currentQuestion.options.length <= 2) { alert('至少保留 2 个选项'); return }
+        _currentQuestion.options.splice(i, 1); renderOptions()
+      })
+      c.appendChild(row)
+    })
+  }
+
+  function renderRows() {
+    const c = document.getElementById('rows-list'); c.innerHTML = ''
+    ;(_currentQuestion.rows || []).forEach((row, i) => {
+      const div = document.createElement('div'); div.className = 'option-edit-row'
+      div.innerHTML = `<span style="color:var(--text-muted);font-size:.85rem;width:20px;flex-shrink:0;">${i+1}.</span>
+        <input class="form-input" type="text" value="${escHtml(row)}" placeholder="子项名称" />
+        <button class="btn-icon">×</button>`
+      div.querySelector('input').addEventListener('input', e => { _currentQuestion.rows[i] = e.target.value })
+      div.querySelector('.btn-icon').addEventListener('click', () => {
+        if (_currentQuestion.rows.length <= 1) { alert('至少保留 1 个子项'); return }
+        _currentQuestion.rows.splice(i, 1); renderRows()
+      })
+      c.appendChild(div)
+    })
+  }
+
+  function renderCols() {
+    const c = document.getElementById('cols-list'); c.innerHTML = ''
+    ;(_currentQuestion.columns || []).forEach((col, i) => {
+      const div = document.createElement('div'); div.className = 'option-edit-row'
+      div.innerHTML = `<span style="color:var(--text-muted);font-size:.85rem;width:20px;flex-shrink:0;">${i+1}.</span>
+        <input class="form-input" type="text" value="${escHtml(col)}" placeholder="程度名称" />
+        <button class="btn-icon">×</button>`
+      div.querySelector('input').addEventListener('input', e => { _currentQuestion.columns[i] = e.target.value })
+      div.querySelector('.btn-icon').addEventListener('click', () => {
+        if (_currentQuestion.columns.length <= 2) { alert('至少保留 2 个程度选项'); return }
+        _currentQuestion.columns.splice(i, 1); renderCols()
+      })
+      c.appendChild(div)
+    })
+  }
+
+  function saveQuestion() {
+    const q = _currentQuestion
+    if (!q) return
+    q.required = document.getElementById('q-required-yes').checked
+    if (!q.title.trim()) { alert('请填写题目标题'); document.getElementById('q-title').focus(); return }
+    if (q.type === 'single_choice' || q.type === 'multiple_choice') {
+      const valid = q.options.filter(o => o.trim())
+      if (valid.length < 2) { alert('至少填写 2 个选项'); return }
+      q.options = valid
+    }
+    if (q.type === 'matrix_single') {
+      const vr = q.rows.filter(r => r.trim()), vc = q.columns.filter(c => c.trim())
+      if (vr.length < 1) { alert('至少填写 1 个子项'); return }
+      if (vc.length < 2) { alert('至少填写 2 个程度选项'); return }
+      q.rows = vr; q.columns = vc
+    }
+    _editingIndex >= 0 ? (state.questions[_editingIndex] = { ...q }) : state.questions.push({ ...q, order: state.questions.length })
+    renderQuestionsList()
+    showToast('题目已保存', 'success')
+    closeModal()
+  }
+
+  document.getElementById('btn-add-question').addEventListener('click', () => openModal(null))
+  document.getElementById('modal-close').addEventListener('click', closeModal)
+  document.getElementById('btn-cancel-question').addEventListener('click', closeModal)
+  document.getElementById('modal-overlay').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal() })
+  document.getElementById('q-type').addEventListener('change', e => {
+    if (_currentQuestion) { _currentQuestion.type = e.target.value; syncTypeVisibility(e.target.value) }
+  })
+  document.getElementById('q-title').addEventListener('input', e => { if (_currentQuestion) _currentQuestion.title = e.target.value })
+  document.querySelectorAll('input[name="q-required"]').forEach(r => r.addEventListener('change', () => {
+    if (_currentQuestion) _currentQuestion.required = document.getElementById('q-required-yes').checked
+  }))
+  document.getElementById('btn-add-option').addEventListener('click', () => { if (_currentQuestion) { _currentQuestion.options.push(''); renderOptions() } })
+  document.getElementById('btn-add-row').addEventListener('click', () => { if (_currentQuestion) { _currentQuestion.rows.push(''); renderRows() } })
+  document.getElementById('btn-add-col').addEventListener('click', () => { if (_currentQuestion) { _currentQuestion.columns.push(''); renderCols() } })
+  document.getElementById('btn-save-question').addEventListener('click', saveQuestion)
+
+  function escHtml(str) {
+    return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+  }
+</script>
+</body>
+</html>

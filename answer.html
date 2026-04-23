@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>问卷</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<nav class="nav-bar" id="nav-bar" style="display:none;">
+  <div class="nav-inner">
+    <span class="nav-title" id="nav-title">问卷</span>
+    <span style="font-size:.8rem;color:var(--text-muted);" id="progress-text"></span>
+  </div>
+</nav>
+
+<div id="state-loading" style="min-height:100vh;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;">
+  <div class="spinner"></div>
+  <div style="color:var(--text-muted);font-size:.9rem;">正在验证链接...</div>
+</div>
+
+<div id="state-error" style="display:none;min-height:100vh;align-items:center;justify-content:center;padding:24px;">
+  <div style="text-align:center;max-width:360px;">
+    <div style="font-size:3rem;margin-bottom:16px;">⚠️</div>
+    <div style="font-size:1.1rem;font-weight:600;color:var(--text);margin-bottom:8px;" id="error-title">链接无效</div>
+    <div style="font-size:.9rem;color:var(--text-muted);line-height:1.6;" id="error-msg"></div>
+  </div>
+</div>
+
+<!-- 封面页 -->
+<div id="state-cover" style="display:none;min-height:100vh;flex-direction:column;align-items:center;justify-content:center;padding:40px 24px;">
+  <div style="max-width:520px;width:100%;text-align:center;">
+    <div style="font-size:1.6rem;font-weight:700;color:var(--text);margin-bottom:16px;line-height:1.4;" id="cover-name"></div>
+    <div style="font-size:1rem;color:var(--text-muted);line-height:1.7;margin-bottom:48px;" id="cover-desc"></div>
+    <button class="btn btn-primary" id="btn-start" style="font-size:1rem;padding:12px 40px;border-radius:24px;">开始回答</button>
+  </div>
+</div>
+
+<div id="state-form" style="display:none;">
+  <div class="page-container">
+    <div id="questions-container"></div>
+    <button class="btn btn-success btn-block" id="btn-submit" style="margin:8px 0 12px;font-size:1rem;">提交问卷</button>
+    <div style="text-align:center;font-size:.8rem;color:var(--text-muted);margin-bottom:32px;">提交后可查看您的回答，但不可再次修改</div>
+  </div>
+</div>
+
+<div id="loading-overlay" class="hidden"><div class="spinner"></div></div>
+<div id="toast-container"></div>
+
+
+<script type="module">
+  import { db, serverTimestamp } from './js/local-db.js'
+  import { signInAsRespondent } from './js/local-auth.js'
+  import { showLoading, hideLoading, showToast, getParam, saveDraft, loadDraft, clearDraft, confirm } from './js/utils.js'
+  import { renderQuestionnaire } from './js/question-renderer.js'
+
+  const token = getParam('token')
+  let shareTokenId = ''
+  let questionnaireData = null
+  let responses = {}
+  let submitting = false
+
+  function showState(state) {
+    document.getElementById('state-loading').style.display = state === 'loading' ? 'flex' : 'none'
+    document.getElementById('state-error').style.display = state === 'error' ? 'flex' : 'none'
+    document.getElementById('state-cover').style.display = state === 'cover' ? 'flex' : 'none'
+    document.getElementById('state-form').style.display = state === 'form' ? 'block' : 'none'
+    document.getElementById('nav-bar').style.display = state === 'form' ? '' : 'none'
+  }
+
+  function showError(title, msg) {
+    document.getElementById('error-title').textContent = title
+    document.getElementById('error-msg').textContent = msg
+    showState('error')
+  }
+
+  if (!token) {
+    showError('链接无效', '未找到有效的问卷链接参数，请检查链接是否完整。')
+  } else {
+    try {
+      const user = await signInAsRespondent()
+
+      // 查找 token
+      const tokenResults = await db.query('share_tokens', { filters: [{ field: 'token', op: '==', value: token }] })
+      if (tokenResults.length === 0) {
+        showError('链接无效', '该链接不存在或已被删除，请联系管理员获取新链接。')
+        throw new Error('exit')
+      }
+
+      const tokenDoc = tokenResults[0]
+      const tokenData = tokenDoc.data()
+      shareTokenId = tokenDoc.id
+
+      // 状态判断
+      if (tokenData.status === 'submitted') {
+        if (tokenData.respondentUid === user.uid) {
+          location.replace(`result.html?shareTokenId=${shareTokenId}`)
+        } else {
+          showError('链接已被使用', '该链接已由他人完成提交，每个链接仅限一人使用。如有需要，请联系管理员。')
+        }
+        throw new Error('exit')
+      }
+
+      if (tokenData.respondentUid && tokenData.respondentUid !== user.uid) {
+        showError('链接不属于您', '该链接已被他人使用，每个链接仅限一人使用。\n如有需要，请联系管理员获取专属链接。')
+        throw new Error('exit')
+      }
+
+      // 首次打开：认领 token
+      if (!tokenData.respondentUid) {
+        await db.update('share_tokens', shareTokenId, {
+          respondentUid: user.uid,
+          status: 'opened',
+          usedAt: serverTimestamp(),
+        })
+      }
+
+      // 获取问卷数据
+      const qSnap = await db.get('questionnaires', tokenData.questionnaireId)
+      if (!qSnap.exists) {
+        showError('问卷不存在', '该问卷已被删除，请联系管理员。')
+        throw new Error('exit')
+      }
+      questionnaireData = { id: qSnap.id, ...qSnap.data() }
+
+      // 恢复草稿
+      const draft = loadDraft(shareTokenId)
+      if (draft) responses = draft
+
+      // 渲染问卷
+      document.getElementById('cover-name').textContent = questionnaireData.name || ''
+      document.getElementById('cover-desc').textContent = questionnaireData.description || ''
+      document.getElementById('nav-title').textContent = questionnaireData.name || '问卷'
+      updateProgress()
+
+      renderQuestionnaire(
+        document.getElementById('questions-container'),
+        questionnaireData.questions || [],
+        responses,
+        false,
+        (questionId, value) => {
+          responses[questionId] = value
+          saveDraft(shareTokenId, responses)
+          updateProgress()
+        }
+      )
+
+      showState('cover')
+
+    } catch(e) {
+      if (e.message !== 'exit') {
+        console.error(e)
+        showError('加载失败', '请刷新重试。')
+      }
+    }
+  }
+
+  function updateProgress() {
+    if (!questionnaireData) return
+    const total = (questionnaireData.questions || []).length
+    const answered = (questionnaireData.questions || []).filter(q => {
+      const v = responses[q.id]
+      if (q.type === 'text_fill') return typeof v === 'string' && v.trim()
+      if (q.type === 'multiple_choice') return Array.isArray(v) && v.length > 0
+      if (q.type === 'matrix_single') return v && typeof v === 'object' && Object.keys(v).length >= (q.rows||[]).length
+      return !!v
+    }).length
+    document.getElementById('progress-text').textContent = `${answered}/${total}`
+  }
+
+  function validateAll() {
+    const questions = questionnaireData.questions || []
+    for (const q of questions) {
+      if (q.required === false) continue
+      const v = responses[q.id]
+      if (q.type === 'single_choice') {
+        if (!v) { showToast(`请完成：${q.title}`, 'error'); return false }
+      }
+      if (q.type === 'multiple_choice') {
+        if (!Array.isArray(v) || v.length === 0) { showToast(`请完成：${q.title}`, 'error'); return false }
+      }
+      if (q.type === 'text_fill') {
+        if (!v || !v.trim()) { showToast(`请完成：${q.title}`, 'error'); return false }
+      }
+      if (q.type === 'matrix_single') {
+        for (const row of (q.rows || [])) {
+          if (!v || !v[row]) { showToast(`请完成：${q.title} — ${row}`, 'error'); return false }
+        }
+      }
+    }
+    return true
+  }
+
+  document.getElementById('btn-start').addEventListener('click', () => {
+    showState('form')
+    window.scrollTo(0, 0)
+  })
+
+  document.getElementById('btn-submit').addEventListener('click', async () => {
+    if (submitting) return
+    if (!validateAll()) return
+
+    const ok = await confirm('提交后无法再次修改，确定提交？', '确定提交', '继续填写')
+    if (!ok) return
+
+    submitting = true
+    document.getElementById('btn-submit').disabled = true
+    showLoading()
+
+    try {
+      const user = await signInAsRespondent()
+
+      // 再次获取快照
+      const qSnap = await db.get('questionnaires', questionnaireData.id)
+      const questionSnapshot = qSnap.exists ? (qSnap.data().questions || []) : (questionnaireData.questions || [])
+
+      const responsesArr = (questionnaireData.questions || []).map(q => ({
+        questionId: q.id,
+        type: q.type,
+        value: responses[q.id] ?? null,
+      }))
+
+      // 防重复提交
+      const existing = await db.query('answers', { filters: [{ field: 'shareTokenId', op: '==', value: shareTokenId }] })
+      if (existing.length > 0) {
+        clearDraft(shareTokenId)
+        location.replace(`result.html?shareTokenId=${shareTokenId}`)
+        return
+      }
+
+      await db.add('answers', {
+        shareTokenId,
+        questionnaireId: questionnaireData.id,
+        respondentUid: user.uid,
+        submittedAt: serverTimestamp(),
+        questionSnapshot,
+        responses: responsesArr,
+      })
+
+      await db.update('share_tokens', shareTokenId, {
+        status: 'submitted',
+        submittedAt: serverTimestamp(),
+      })
+
+      clearDraft(shareTokenId)
+      location.replace(`result.html?shareTokenId=${shareTokenId}`)
+    } catch(e) {
+      console.error(e)
+      showToast('提交失败，请重试', 'error')
+      submitting = false
+      document.getElementById('btn-submit').disabled = false
+    } finally {
+      hideLoading()
+    }
+  })
+</script>
+</body>
+</html>

@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>诊断</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #f5f5f5; }
+    .ok { color: green; } .err { color: red; } .info { color: #666; }
+    pre { background: #fff; padding: 10px; border-radius: 4px; white-space: pre-wrap; word-break: break-all; font-size: 13px; }
+    button { margin: 8px 4px; padding: 8px 16px; cursor: pointer; }
+  </style>
+</head>
+<body>
+<h2>CloudBase 诊断</h2>
+<div id="log"></div>
+<button onclick="runTest()">重新测试</button>
+
+<script src="js/cloudbase.full.js"></script>
+<script>
+const ENV_ID = 'candymaxserver-d2gt2bl4j640d935a'
+const log = document.getElementById('log')
+
+function line(msg, cls) {
+  const p = document.createElement('pre')
+  p.className = cls || 'info'
+  p.textContent = new Date().toLocaleTimeString() + ' ' + msg
+  log.appendChild(p)
+  console.log(msg)
+}
+
+async function runTest() {
+  log.innerHTML = ''
+
+  // 1. SDK 是否加载
+  line('1. 检查 SDK 加载...')
+  if (window.cloudbase) {
+    line('✓ window.cloudbase 存在', 'ok')
+  } else if (window.tcb) {
+    line('✓ window.tcb 存在', 'ok')
+  } else {
+    line('✗ SDK 未加载！window.cloudbase 和 window.tcb 均不存在', 'err')
+    return
+  }
+
+  // 2. 初始化
+  line('2. 初始化 app...')
+  let app, auth, db
+  try {
+    const sdk = window.cloudbase || window.tcb
+    app = sdk.init({ env: ENV_ID })
+    line('✓ app 初始化成功', 'ok')
+  } catch(e) {
+    line('✗ app 初始化失败: ' + e.message, 'err')
+    return
+  }
+
+  // 3. Auth
+  line('3. 初始化 auth...')
+  try {
+    auth = app.auth({ persistence: 'local' })
+    line('✓ auth 初始化成功', 'ok')
+  } catch(e) {
+    line('✗ auth 初始化失败: ' + e.message, 'err')
+    return
+  }
+
+  // 4. 获取登录态（带超时）
+  line('4. 获取登录态（5秒超时）...')
+  try {
+    const loginState = await Promise.race([
+      auth.getLoginState(),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('超时')), 5000))
+    ])
+    if (loginState) {
+      const u = loginState.user
+      line('✓ loginState.user 结构: ' + JSON.stringify({
+        uid: u?.uid,
+        loginType: u?.loginType,
+        username: u?.username,
+        isAnonymous: loginState.isAnonymous,
+      }), 'ok')
+      const isAdmin = u && u.loginType !== 'ANONYMOUS' && loginState.isAnonymous !== true
+      line((isAdmin ? '✓ 判断为管理员' : '⚠ 判断为匿名/未登录'), isAdmin ? 'ok' : 'err')
+    } else {
+      line('✓ 未登录（loginState 为 null）', 'ok')
+    }
+  } catch(e) {
+    line('✗ getLoginState 失败: ' + e.message, 'err')
+  }
+
+  // 5. 匿名登录测试
+  line('5. 尝试匿名登录（5秒超时）...')
+  try {
+    await Promise.race([
+      auth.signInAnonymously(),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('超时')), 5000))
+    ])
+    const u = auth.currentUser
+    line('✓ 匿名登录成功: uid=' + (u?.uid || '?'), 'ok')
+  } catch(e) {
+    line('✗ 匿名登录失败: ' + e.message, 'err')
+  }
+
+  // 6. 数据库连接测试
+  line('6. 测试数据库连接（5秒超时）...')
+  try {
+    db = app.database()
+    const _ = db.command
+    const result = await Promise.race([
+      db.collection('questionnaires').limit(1).get(),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('超时')), 5000))
+    ])
+    line('✓ 数据库查询成功，返回 ' + (result.data?.length || 0) + ' 条', 'ok')
+  } catch(e) {
+    line('✗ 数据库查询失败: ' + e.message, 'err')
+  }
+
+  line('--- 诊断完成 ---')
+}
+
+window.onload = runTest
+</script>
+</body>
+</html>

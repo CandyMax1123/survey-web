@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>自动化测试</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+    .pass { color: #4ec9b0; }
+    .fail { color: #f44747; }
+    .info { color: #9cdcfe; }
+    .warn { color: #dcdcaa; }
+    pre { margin: 2px 0; }
+    h2 { color: #569cd6; }
+  </style>
+</head>
+<body>
+<h2>问卷系统 — 自动化测试</h2>
+<div id="log"></div>
+
+<script type="module">
+  import { db, serverTimestamp } from './js/local-db.js'
+  import { registerAdmin, loginAdmin, getAdminSession, signOut, signInAsRespondent } from './js/local-auth.js'
+  import { generateId, generateToken, formatDate, saveDraft, loadDraft, clearDraft } from './js/utils.js'
+
+  const log = document.getElementById('log')
+  let passed = 0, failed = 0
+
+  function print(msg, cls = '') {
+    const pre = document.createElement('pre')
+    pre.className = cls
+    pre.textContent = msg
+    log.appendChild(pre)
+  }
+
+  function ok(label) { print(`✓ ${label}`, 'pass'); passed++ }
+  function fail(label, reason) { print(`✗ ${label}${reason ? ' — ' + reason : ''}`, 'fail'); failed++ }
+  function section(title) { print(`\n── ${title} ──`, 'info') }
+
+  // ===== 清理旧数据 =====
+  ;['questionnaires','share_tokens','answers','local_accounts','local_admin_session','local_anon_uid'].forEach(k => {
+    localStorage.removeItem('db_' + k)
+    localStorage.removeItem(k)
+  })
+  print('环境已清空', 'warn')
+
+  // ===== 1. 工具函数 =====
+  section('1. 工具函数')
+
+  try {
+    const id = generateId()
+    id.startsWith('q') ? ok('generateId 生成 q 开头 ID') : fail('generateId 格式', id)
+  } catch(e) { fail('generateId', e.message) }
+
+  try {
+    const t = generateToken()
+    t.length === 16 ? ok('generateToken 长度 16') : fail('generateToken 长度', t.length)
+  } catch(e) { fail('generateToken', e.message) }
+
+  try {
+    const d = formatDate(Date.now())
+    d.includes('-') ? ok('formatDate 数字时间戳') : fail('formatDate 输出格式', d)
+  } catch(e) { fail('formatDate', e.message) }
+
+  try {
+    saveDraft('test_token', { q1: 'ans' })
+    const draft = loadDraft('test_token')
+    draft && draft.q1 === 'ans' ? ok('草稿 save/load') : fail('草稿 load 结果', JSON.stringify(draft))
+    clearDraft('test_token')
+    loadDraft('test_token') === null ? ok('草稿 clear') : fail('草稿 clear 后仍有值')
+  } catch(e) { fail('草稿', e.message) }
+
+  // ===== 2. 本地数据库 =====
+  section('2. 本地数据库 (local-db)')
+
+  try {
+    const { id } = db.add('test_col', { name: 'hello', val: 42 })
+    id ? ok('db.add 返回 id') : fail('db.add 无 id')
+
+    const snap = db.get('test_col', id)
+    snap.exists && snap.data().name === 'hello' ? ok('db.get 读取正确') : fail('db.get', JSON.stringify(snap))
+
+    db.update('test_col', id, { val: 99 })
+    db.get('test_col', id).data().val === 99 ? ok('db.update 局部更新') : fail('db.update')
+
+    const results = db.query('test_col', { filters: [{ field: 'val', op: '==', value: 99 }] })
+    results.length === 1 ? ok('db.query 过滤') : fail('db.query 结果数量', results.length)
+
+    db.delete('test_col', id)
+    !db.get('test_col', id).exists ? ok('db.delete') : fail('db.delete 后仍存在')
+  } catch(e) { fail('local-db', e.message) }
+
+  try {
+    db.add('test_order', { name: 'B', ts: 2000 })
+    db.add('test_order', { name: 'A', ts: 1000 })
+    db.add('test_order', { name: 'C', ts: 3000 })
+    const sorted = db.query('test_order', { orderBy: { field: 'ts', desc: true } }).map(d => d.data().name)
+    sorted[0] === 'C' && sorted[2] === 'A' ? ok('db.query 倒序排序') : fail('db.query 排序结果', sorted.join(','))
+  } catch(e) { fail('db.query 排序', e.message) }
+
+  try {
+    const b = db.batch()
+    const { id: id1 } = db.add('test_batch', { x: 1 })
+    b.update('test_batch', id1, { x: 99 })
+    b.delete('test_batch', id1)
+    b.commit()
+    !db.get('test_batch', id1).exists ? ok('db.batch commit') : fail('db.batch delete 未生效')
+  } catch(e) { fail('db.batch', e.message) }
+
+  // ===== 3. 认证 =====
+  section('3. 认证 (local-auth)')
+
+  try {
+    const user = registerAdmin('test@example.com', 'pass123')
+    user.uid && user.email === 'test@example.com' && !user.isAnonymous ? ok('registerAdmin') : fail('registerAdmin 返回值', JSON.stringify(user))
+  } catch(e) { fail('registerAdmin', e.message) }
+
+  try {
+    registerAdmin('test@example.com', 'pass123')
+    fail('registerAdmin 重复注册应报错')
+  } catch(e) {
+    e.message.includes('已被注册') ? ok('registerAdmin 重复注册拦截') : fail('重复注册错误信息', e.message)
+  }
+
+  try {
+    loginAdmin('test@example.com', 'wrongpass')
+    fail('loginAdmin 错误密码应报错')
+  } catch(e) {
+    e.message.includes('密码') ? ok('loginAdmin 密码错误拦截') : fail('密码错误信息', e.message)
+  }
+
+  try {
+    const user = loginAdmin('test@example.com', 'pass123')
+    user.email === 'test@example.com' ? ok('loginAdmin 正确登录') : fail('loginAdmin', JSON.stringify(user))
+    const session = getAdminSession()
+    session && session.email === 'test@example.com' ? ok('getAdminSession') : fail('getAdminSession', JSON.stringify(session))
+    signOut()
+    getAdminSession() === null ? ok('signOut 清除 session') : fail('signOut 未清除')
+  } catch(e) { fail('loginAdmin/signOut', e.message) }
+
+  try {
+    const u1 = await signInAsRespondent()
+    const u2 = await signInAsRespondent()
+    u1.uid === u2.uid ? ok('signInAsRespondent 同浏览器 UID 一致') : fail('UID 不一致', `${u1.uid} vs ${u2.uid}`)
+    u1.isAnonymous ? ok('signInAsRespondent isAnonymous=true') : fail('isAnonymous 应为 true')
+  } catch(e) { fail('signInAsRespondent', e.message) }
+
+  // ===== 4. 完整业务流程 =====
+  section('4. 完整业务流程')
+
+  // 4.1 管理员注册并创建问卷
+  const adminUser = loginAdmin('test@example.com', 'pass123')
+
+  const questions = [
+    { id: generateId(), type: 'single_choice', title: '单选题', options: ['选项A', '选项B', '选项C'] },
+    { id: generateId(), type: 'multiple_choice', title: '多选题', options: ['选A', '选B', '选C'] },
+    { id: generateId(), type: 'text_fill', title: '填空题' },
+    { id: generateId(), type: 'matrix_single', title: '矩阵题', rows: ['子项1', '子项2'], columns: ['非常好', '好', '差'] },
+  ]
+
+  const { id: qId } = db.add('questionnaires', {
+    _adminUid: adminUser.uid,
+    name: '测试问卷',
+    description: '自动化测试用问卷',
+    questions,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  })
+  db.get('questionnaires', qId).exists ? ok('创建问卷') : fail('创建问卷')
+
+  // 4.2 创建分享 token
+  const token = generateToken()
+  const { id: tokenId } = db.add('share_tokens', {
+    questionnaireId: qId,
+    token,
+    nickname: '测试受访者',
+    respondentUid: null,
+    status: 'pending',
+    createdAt: serverTimestamp(),
+    usedAt: null,
+    submittedAt: null,
+  })
+  db.get('share_tokens', tokenId).exists ? ok('创建分享 token') : fail('创建分享 token')
+
+  // 4.3 受访者认领 token
+  signOut()
+  localStorage.removeItem('local_anon_uid') // 模拟新受访者
+  const respondent = await signInAsRespondent()
+
+  const tokenResults = db.query('share_tokens', { filters: [{ field: 'token', op: '==', value: token }] })
+  tokenResults.length === 1 ? ok('受访者查询 token') : fail('受访者查询 token', tokenResults.length)
+
+  const tokenData = tokenResults[0].data()
+  const tId = tokenResults[0].id
+
+  if (!tokenData.respondentUid) {
+    db.update('share_tokens', tId, { respondentUid: respondent.uid, status: 'opened', usedAt: serverTimestamp() })
+    ok('受访者认领 token')
+  } else {
+    fail('token 已被占用，无法认领')
+  }
+
+  // 4.4 模拟另一个受访者尝试使用同一 token（应被拒绝）
+  localStorage.removeItem('local_anon_uid')
+  const respondent2 = await signInAsRespondent()
+  const tData2 = db.get('share_tokens', tId).data()
+  tData2.respondentUid !== respondent2.uid ? ok('其他受访者被拒绝（UID 不匹配）') : fail('其他受访者未被拒绝')
+
+  // 4.5 受访者提交答案
+  const anonUid = respondent.uid
+  localStorage.setItem('local_anon_uid', anonUid) // 恢复原受访者身份
+
+  const qSnap = db.get('questionnaires', qId)
+  const questionSnapshot = qSnap.data().questions
+
+  const responses = {
+    [questions[0].id]: '选项A',
+    [questions[1].id]: ['选A', '选C'],
+    [questions[2].id]: '这是填空答案',
+    [questions[3].id]: { '子项1': '好', '子项2': '非常好' },
+  }
+
+  const responsesArr = questions.map(q => ({ questionId: q.id, type: q.type, value: responses[q.id] ?? null }))
+
+  const { id: answerId } = db.add('answers', {
+    shareTokenId: tId,
+    questionnaireId: qId,
+    respondentUid: anonUid,
+    submittedAt: serverTimestamp(),
+    questionSnapshot,
+    responses: responsesArr,
+  })
+  db.update('share_tokens', tId, { status: 'submitted', submittedAt: serverTimestamp() })
+
+  db.get('answers', answerId).exists ? ok('受访者提交答案') : fail('提交答案')
+  db.get('share_tokens', tId).data().status === 'submitted' ? ok('token 状态变为 submitted') : fail('token 状态未更新')
+
+  // 4.6 防重复提交
+  const existing = db.query('answers', { filters: [{ field: 'shareTokenId', op: '==', value: tId }] })
+  existing.length > 0 ? ok('防重复提交检查（已有答案）') : fail('防重复提交检查失败')
+
+  // 4.7 管理员查看答案
+  const adminUser2 = loginAdmin('test@example.com', 'pass123')
+  const answerDocs = db.query('answers', { filters: [{ field: 'shareTokenId', op: '==', value: tId }] })
+  answerDocs.length === 1 ? ok('管理员查询答案') : fail('管理员查询答案数量', answerDocs.length)
+
+  const answer = answerDocs[0].data()
+  answer.questionSnapshot.length === questions.length ? ok('questionSnapshot 完整') : fail('questionSnapshot', answer.questionSnapshot.length)
+  answer.responses.length === questions.length ? ok('responses 完整') : fail('responses', answer.responses.length)
+
+  const respMap = {}
+  answer.responses.forEach(r => respMap[r.questionId] = r.value)
+  respMap[questions[0].id] === '选项A' ? ok('单选答案正确') : fail('单选答案', respMap[questions[0].id])
+  JSON.stringify(respMap[questions[1].id]) === JSON.stringify(['选A','选C']) ? ok('多选答案正确') : fail('多选答案', respMap[questions[1].id])
+  respMap[questions[2].id] === '这是填空答案' ? ok('填空答案正确') : fail('填空答案', respMap[questions[2].id])
+  respMap[questions[3].id]?.['子项1'] === '好' ? ok('矩阵答案正确') : fail('矩阵答案', JSON.stringify(respMap[questions[3].id]))
+
+  // 4.8 受访者查看自己的答案
+  localStorage.setItem('local_anon_uid', anonUid)
+  const respondentSelf = await signInAsRespondent()
+  const tSnap = db.get('share_tokens', tId)
+  tSnap.data().respondentUid === respondentSelf.uid ? ok('受访者身份验证（查看答案）') : fail('受访者查看答案权限')
+
+  // 4.9 管理员删除答案
+  const answersBefore = db.query('answers', { filters: [{ field: 'shareTokenId', op: '==', value: tId }] })
+  answersBefore.forEach(d => db.delete('answers', d.id))
+  db.update('share_tokens', tId, { status: 'opened', submittedAt: null, respondentUid: null })
+  db.query('answers', { filters: [{ field: 'shareTokenId', op: '==', value: tId }] }).length === 0 ? ok('管理员删除答案') : fail('删除答案')
+  db.get('share_tokens', tId).data().status === 'opened' ? ok('token 状态重置为 opened') : fail('token 状态重置')
+
+  // 4.10 管理员删除问卷
+  db.delete('questionnaires', qId)
+  !db.get('questionnaires', qId).exists ? ok('管理员删除问卷') : fail('删除问卷')
+
+  // ===== 5. question-editor modal DOM 检查 =====
+  section('5. Modal DOM 结构检查（edit.html 需要这些元素）')
+
+  const requiredIds = ['modal-overlay','question-modal','q-type','q-title','options-list',
+    'rows-list','cols-list','section-options','section-matrix','section-fill-hint',
+    'btn-add-option','btn-add-row','btn-add-col','btn-save-question','btn-cancel-question','modal-close']
+
+  for (const id of requiredIds) {
+    document.getElementById(id)
+      ? ok(`#${id} 存在`)
+      : fail(`#${id} 不存在（edit.html 中缺少此元素）`)
+  }
+
+  // ===== 总结 =====
+  section('测试结果')
+  print(`通过: ${passed}  失败: ${failed}`, failed === 0 ? 'pass' : 'fail')
+  if (failed === 0) print('🎉 所有测试通过！', 'pass')
+  else print('⚠️ 有失败项，请查看上方详情', 'fail')
+</script>
+</body>
+</html>

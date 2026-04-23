@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>查看答卷</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<nav class="nav-bar">
+  <div class="nav-inner">
+    <button class="nav-back" onclick="history.back()">&#8592; 返回</button>
+    <span class="nav-title">查看答卷</span>
+  </div>
+</nav>
+
+<div class="page-container">
+  <div id="content">
+    <div class="empty-state" style="padding-top:80px;">
+      <div class="spinner" style="margin:0 auto 16px;"></div>
+      <div class="empty-state-text">加载中...</div>
+    </div>
+  </div>
+</div>
+
+<div id="loading-overlay" class="hidden"><div class="spinner"></div></div>
+<div id="toast-container"></div>
+
+
+<script type="module">
+  import { db } from './js/local-db.js'
+  import { requireAdmin } from './js/local-auth.js'
+  import { getParam, formatDate } from './js/utils.js'
+  import { renderQuestionnaire } from './js/question-renderer.js'
+
+  const user = await requireAdmin()
+  const shareTokenId = getParam('shareTokenId')
+  const content = document.getElementById('content')
+
+  function showError(msg) {
+    content.innerHTML = `<div class="empty-state" style="padding-top:80px;"><div style="font-size:2.5rem;margin-bottom:12px;">⚠️</div><div class="empty-state-text" style="color:var(--danger);">${msg}</div></div>`
+  }
+
+  if (!shareTokenId) {
+    showError('参数错误')
+  } else {
+    try {
+      const tokenSnap = await db.get('share_tokens', shareTokenId)
+      if (!tokenSnap.exists) { showError('链接不存在'); throw new Error('exit') }
+
+      const tokenData = tokenSnap.data()
+
+      const qSnap = await db.get('questionnaires', tokenData.questionnaireId)
+      if (!qSnap.exists || qSnap.data()._adminUid !== user.uid) {
+        showError('无权查看该答卷'); throw new Error('exit')
+      }
+
+      const answers = await db.query('answers', { filters: [{ field: 'shareTokenId', op: '==', value: shareTokenId }] })
+      if (answers.length === 0) { showError('暂无答卷数据'); throw new Error('exit') }
+
+      const answer = answers[0].data()
+      const questions = answer.questionSnapshot || []
+
+      const responseMap = {}
+      ;(answer.responses || []).forEach(r => { responseMap[r.questionId] = r.value })
+
+      content.innerHTML = ''
+
+      const metaCard = document.createElement('div')
+      metaCard.className = 'card'
+      metaCard.style.marginTop = '16px'
+      metaCard.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
+          <div>
+            <div style="font-size:.85rem;color:var(--text-muted);">备注名</div>
+            <div style="font-size:1rem;font-weight:600;margin-top:2px;">${escHtml(tokenData.nickname || '（未命名）')}</div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size:.85rem;color:var(--text-muted);">提交时间</div>
+            <div style="font-size:.9rem;margin-top:2px;">${formatDate(answer.submittedAt)}</div>
+          </div>
+        </div>
+        <div class="divider" style="margin:12px 0 8px;"></div>
+        <div style="font-size:.85rem;color:var(--text-muted);">问卷：${escHtml(qSnap.data().name || '')}</div>
+      `
+      content.appendChild(metaCard)
+
+      const container = document.createElement('div')
+      content.appendChild(container)
+      renderQuestionnaire(container, questions, responseMap, true, null)
+
+      const footer = document.createElement('div')
+      footer.style.cssText = 'text-align:center;color:var(--text-muted);font-size:.85rem;padding:24px 0 48px;'
+      footer.textContent = '— 以上为答卷全部内容 —'
+      content.appendChild(footer)
+
+    } catch(e) {
+      if (e.message !== 'exit') {
+        console.error(e)
+        showError('加载失败，请刷新重试')
+      }
+    }
+  }
+
+  function escHtml(str) {
+    return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+  }
+</script>
+</body>
+</html>

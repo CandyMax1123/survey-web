@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>我的回答</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<nav class="nav-bar">
+  <div class="nav-inner">
+    <span class="nav-title">我的回答</span>
+  </div>
+</nav>
+
+<div class="page-container">
+  <div id="content">
+    <div class="empty-state" style="padding-top:80px;">
+      <div class="spinner" style="margin:0 auto 16px;"></div>
+      <div class="empty-state-text">加载中...</div>
+    </div>
+  </div>
+</div>
+
+<div id="loading-overlay" class="hidden"><div class="spinner"></div></div>
+<div id="toast-container"></div>
+
+
+<script type="module">
+  import { db } from './js/local-db.js'
+  import { signInAsRespondent } from './js/local-auth.js'
+  import { getParam } from './js/utils.js'
+  import { renderQuestionnaire } from './js/question-renderer.js'
+
+  const shareTokenId = getParam('shareTokenId')
+  const content = document.getElementById('content')
+
+  function showError(msg) {
+    content.innerHTML = `<div class="empty-state" style="padding-top:80px;"><div style="font-size:2.5rem;margin-bottom:12px;">⚠️</div><div class="empty-state-text" style="color:var(--danger);">${msg}</div></div>`
+  }
+
+  if (!shareTokenId) {
+    showError('参数错误')
+  } else {
+    try {
+      const user = await signInAsRespondent()
+
+      const tokenSnap = await db.get('share_tokens', shareTokenId)
+      if (!tokenSnap.exists || tokenSnap.data().respondentUid !== user.uid) {
+        showError('无权查看该答卷')
+        throw new Error('no permission')
+      }
+
+      const answers = await db.query('answers', {
+        filters: [
+          { field: 'shareTokenId', op: '==', value: shareTokenId },
+          { field: 'respondentUid', op: '==', value: user.uid }
+        ]
+      })
+      if (answers.length === 0) {
+        showError('未找到答卷，请联系管理员')
+        throw new Error('no answer')
+      }
+
+      const answer = answers[0].data()
+      const questions = answer.questionSnapshot || []
+
+      const responseMap = {}
+      ;(answer.responses || []).forEach(r => { responseMap[r.questionId] = r.value })
+
+      content.innerHTML = ''
+
+      const banner = document.createElement('div')
+      banner.className = 'success-banner'
+      banner.style.marginTop = '16px'
+      banner.innerHTML = `
+        <div class="success-banner-icon">✓</div>
+        <div>
+          <div class="success-banner-title">提交成功</div>
+          <div class="success-banner-sub">以下是您的作答记录，仅供查看，不可修改</div>
+        </div>
+      `
+      content.appendChild(banner)
+
+      const container = document.createElement('div')
+      content.appendChild(container)
+      renderQuestionnaire(container, questions, responseMap, true, null)
+
+      const footer = document.createElement('div')
+      footer.style.cssText = 'text-align:center;color:var(--text-muted);font-size:.85rem;padding:24px 0 48px;'
+      footer.textContent = '感谢您的填写！'
+      content.appendChild(footer)
+
+    } catch(e) {
+      if (e.message !== 'no permission' && e.message !== 'no answer') {
+        console.error(e)
+        showError('加载失败，请刷新重试')
+      }
+    }
+  }
+</script>
+</body>
+</html>

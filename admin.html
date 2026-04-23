@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>登录 — 问卷系统</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div class="login-page">
+  <div class="login-card">
+    <div class="login-title">📋 问卷系统</div>
+    <div class="login-sub">管理员登录</div>
+
+    <div id="form-login">
+      <div class="form-group">
+        <label class="form-label">用户名</label>
+        <input class="form-input" type="text" id="login-username" placeholder="请输入用户名" autocomplete="username" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">密码</label>
+        <input class="form-input" type="password" id="login-pwd" placeholder="请输入密码" autocomplete="current-password" />
+      </div>
+      <button class="btn btn-primary btn-block" id="btn-login">登录</button>
+    </div>
+
+    <div id="auth-error" style="display:none;margin-top:12px;color:var(--danger);font-size:.875rem;text-align:center;"></div>
+  </div>
+</div>
+
+<div id="loading-overlay" class="hidden"><div class="spinner"></div></div>
+<div id="toast-container"></div>
+
+<script type="module">
+  import { loginAdmin, getAdminUser } from './js/local-auth.js'
+
+  // 已登录则直接跳转（不调用 requireAdmin，避免无限重定向）
+  if (getAdminUser()) {
+    location.href = 'index.html'
+  }
+
+  function showError(msg) {
+    const el = document.getElementById('auth-error')
+    el.textContent = msg
+    el.style.display = 'block'
+  }
+  function clearError() {
+    document.getElementById('auth-error').style.display = 'none'
+  }
+
+  document.getElementById('btn-login').addEventListener('click', async () => {
+    clearError()
+    const username = document.getElementById('login-username').value.trim()
+    const pwd = document.getElementById('login-pwd').value
+    if (!username || !pwd) { showError('请填写用户名和密码'); return }
+    document.getElementById('loading-overlay').classList.remove('hidden')
+    try {
+      await loginAdmin(username, pwd)
+      location.href = 'index.html'
+    } catch(e) {
+      showError(e.message || '登录失败')
+    } finally {
+      document.getElementById('loading-overlay').classList.add('hidden')
+    }
+  })
+
+  document.getElementById('login-pwd').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('btn-login').click()
+  })
+</script>
+</body>
+</html>
