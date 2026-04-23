@@ -46,7 +46,13 @@ function buildQuestionBlock(q, value, readonly, index, total, onChange) {
   return div
 }
 
-function requiredMark(q, readonly) {
+function buildQuestionDesc(q) {
+  if (!q.description) return ''
+  const desc = document.createElement('div')
+  desc.style.cssText = 'font-size:.85rem;color:var(--text-muted);line-height:1.6;margin-top:4px;margin-bottom:6px;'
+  desc.textContent = q.description
+  return desc
+}
   if (readonly || q.required === false) return ''
   return '<span class="required">*</span>'
 }
@@ -59,6 +65,7 @@ function buildSingleChoice(q, value, readonly, onChange) {
   title.className = 'question-block-title'
   title.innerHTML = `${requiredMark(q, readonly)}${escHtml(q.title)}`
   wrap.appendChild(title)
+  const desc = buildQuestionDesc(q); if (desc) wrap.appendChild(desc)
 
   ;(q.options || []).forEach(opt => {
     const isSelected = value === opt
@@ -89,6 +96,7 @@ function buildMultipleChoice(q, value, readonly, onChange) {
   title.className = 'question-block-title'
   title.innerHTML = `${requiredMark(q, readonly)}${escHtml(q.title)} <span style="font-size:.8rem;color:var(--text-muted);font-weight:400;">（可多选）</span>`
   wrap.appendChild(title)
+  const desc2 = buildQuestionDesc(q); if (desc2) wrap.appendChild(desc2)
 
   ;(q.options || []).forEach(opt => {
     const isSelected = selected.includes(opt)
@@ -122,6 +130,7 @@ function buildMatrixSingle(q, value, readonly, onChange) {
   title.className = 'question-block-title'
   title.innerHTML = `${requiredMark(q, readonly)}${escHtml(q.title)}`
   wrap.appendChild(title)
+  const desc3 = buildQuestionDesc(q); if (desc3) wrap.appendChild(desc3)
 
   const scrollDiv = document.createElement('div')
   scrollDiv.className = 'matrix-scroll'
@@ -182,6 +191,7 @@ function buildTextFill(q, value, readonly, onChange) {
   title.className = 'question-block-title'
   title.innerHTML = `${requiredMark(q, readonly)}${escHtml(q.title)}`
   wrap.appendChild(title)
+  const desc4 = buildQuestionDesc(q); if (desc4) wrap.appendChild(desc4)
 
   const textarea = document.createElement('textarea')
   textarea.className = 'text-fill-area'
