@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>查看答卷</title>
   <link rel="stylesheet" href="css/style.css" />
+  <script src="js/cloudbase.full.js"></script>
 </head>
 <body>
 
@@ -29,8 +30,8 @@
 
 
 <script type="module">
-  import { db } from './js/local-db.js'
-  import { requireAdmin } from './js/local-auth.js'
+  import { db } from './js/cloudbase-db.js'
+  import { requireAdmin } from './js/cloudbase-auth.js'
   import { getParam, formatDate } from './js/utils.js'
   import { renderQuestionnaire } from './js/question-renderer.js'
 

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>问卷</title>
   <link rel="stylesheet" href="css/style.css" />
+  <script src="js/cloudbase.full.js"></script>
 </head>
 <body>
 
@@ -50,8 +51,8 @@
 
 
 <script type="module">
-  import { db, serverTimestamp } from './js/local-db.js'
-  import { signInAsRespondent } from './js/local-auth.js'
+  import { db, serverTimestamp } from './js/cloudbase-db.js'
+  import { signInAsRespondent } from './js/cloudbase-auth.js'
   import { showLoading, hideLoading, showToast, getParam, saveDraft, loadDraft, clearDraft, confirm } from './js/utils.js'
   import { renderQuestionnaire } from './js/question-renderer.js'
 

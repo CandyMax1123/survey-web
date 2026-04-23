@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>编辑问卷</title>
   <link rel="stylesheet" href="css/style.css" />
+  <script src="js/cloudbase.full.js"></script>
   <style>
     .q-edit-card {
       background: var(--card-bg);
@@ -156,8 +157,8 @@
 
 
 <script type="module">
-  import { db, serverTimestamp } from './js/local-db.js'
-  import { requireAdmin } from './js/local-auth.js'
+  import { db, serverTimestamp } from './js/cloudbase-db.js'
+  import { requireAdmin } from './js/cloudbase-auth.js'
   import { showLoading, hideLoading, showToast, getParam, generateId, TYPE_LABELS } from './js/utils.js'
   import { renderQuestionnaire } from './js/question-renderer.js'
 

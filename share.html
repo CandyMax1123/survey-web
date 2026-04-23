@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>分享管理</title>
   <link rel="stylesheet" href="css/style.css" />
+  <script src="js/cloudbase.full.js"></script>
 </head>
 <body>
 
@@ -78,8 +79,8 @@
 
 
 <script type="module">
-  import { db, serverTimestamp } from './js/local-db.js'
-  import { requireAdmin } from './js/local-auth.js'
+  import { db, serverTimestamp } from './js/cloudbase-db.js'
+  import { requireAdmin } from './js/cloudbase-auth.js'
   import { showLoading, hideLoading, showToast, getParam, generateToken, formatDate, confirm } from './js/utils.js'
 
   const user = await requireAdmin()

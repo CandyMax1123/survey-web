@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>我的回答</title>
   <link rel="stylesheet" href="css/style.css" />
+  <script src="js/cloudbase.full.js"></script>
 </head>
 <body>
 
@@ -28,8 +29,8 @@
 
 
 <script type="module">
-  import { db } from './js/local-db.js'
-  import { signInAsRespondent } from './js/local-auth.js'
+  import { db } from './js/cloudbase-db.js'
+  import { signInAsRespondent } from './js/cloudbase-auth.js'
   import { getParam } from './js/utils.js'
   import { renderQuestionnaire } from './js/question-renderer.js'
 
