@@ -129,6 +129,9 @@
       const draft = loadDraft(shareTokenId)
       if (draft) responses = draft
 
+      // 调试：暴露题目数据到 window，方便控制台排查
+      window.__debugQuestions = questionnaireData.questions
+
       // 渲染问卷
       document.getElementById('cover-name').textContent = questionnaireData.name || ''
       document.getElementById('cover-desc').textContent = questionnaireData.description || ''
