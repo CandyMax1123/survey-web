@@ -129,9 +129,6 @@
       const draft = loadDraft(shareTokenId)
       if (draft) responses = draft
 
-      // 调试：暴露题目数据到 window，方便控制台排查
-      window.__debugQuestions = questionnaireData.questions
-
       // 渲染问卷
       document.getElementById('cover-name').textContent = questionnaireData.name || ''
       document.getElementById('cover-desc').textContent = questionnaireData.description || ''
@@ -178,7 +175,6 @@
 
   function validateAll() {
     const questions = questionnaireData.questions || []
-    console.log('[validate] 题目数量:', questions.length, '当前responses:', JSON.stringify(responses))
     // 清除所有旧红框
     document.querySelectorAll('.question-block.error').forEach(el => el.classList.remove('error'))
 
@@ -202,14 +198,11 @@
       if (invalid) errors.push({ index: i + 1, q })
     }
 
-    console.log('[validate] 未完成必填题数量:', errors.length, errors.map(e => `第${e.index}题`))
-
     if (errors.length === 0) return true
 
     // 给所有未完成必答题加红框
     errors.forEach(({ q }) => {
       const block = document.querySelector(`.question-block[data-question-id="${q.id}"]`)
-      console.log('[validate] 找到题目DOM:', !!block, 'id:', q.id)
       if (block) block.classList.add('error')
     })
 
