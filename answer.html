@@ -144,6 +144,9 @@
           responses[questionId] = value
           saveDraft(shareTokenId, responses)
           updateProgress()
+          // 作答后清除该题红框
+          const block = document.querySelector(`.question-block[data-question-id="${questionId}"]`)
+          if (block) block.classList.remove('error')
         }
       )
 
@@ -172,25 +175,44 @@
 
   function validateAll() {
     const questions = questionnaireData.questions || []
-    for (const q of questions) {
+    // 清除所有旧红框
+    document.querySelectorAll('.question-block.error').forEach(el => el.classList.remove('error'))
+
+    const errors = []
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i]
       if (q.required === false) continue
       const v = responses[q.id]
+      let invalid = false
       if (q.type === 'single_choice') {
-        if (!v) { showToast(`请完成：${q.title}`, 'error'); return false }
-      }
-      if (q.type === 'multiple_choice') {
-        if (!Array.isArray(v) || v.length === 0) { showToast(`请完成：${q.title}`, 'error'); return false }
-      }
-      if (q.type === 'text_fill') {
-        if (!v || !v.trim()) { showToast(`请完成：${q.title}`, 'error'); return false }
-      }
-      if (q.type === 'matrix_single') {
+        invalid = !v
+      } else if (q.type === 'multiple_choice') {
+        invalid = !Array.isArray(v) || v.length === 0
+      } else if (q.type === 'text_fill') {
+        invalid = !v || !v.trim()
+      } else if (q.type === 'matrix_single') {
         for (const row of (q.rows || [])) {
-          if (!v || !v[row]) { showToast(`请完成：${q.title} — ${row}`, 'error'); return false }
+          if (!v || !v[row]) { invalid = true; break }
         }
       }
+      if (invalid) errors.push({ index: i + 1, q })
     }
-    return true
+
+    if (errors.length === 0) return true
+
+    // 给所有未完成必答题加红框
+    errors.forEach(({ q }) => {
+      const block = document.querySelector(`.question-block[data-question-id="${q.id}"]`)
+      if (block) block.classList.add('error')
+    })
+
+    // 提示第一个未完成的题目并滚动过去
+    const first = errors[0]
+    showToast(`第 ${first.index} 题为必填项，请完成后再提交`, 'error')
+    const firstBlock = document.querySelector(`.question-block[data-question-id="${first.q.id}"]`)
+    if (firstBlock) firstBlock.scrollIntoView({ behavior: 'smooth', block: 'center' })
+
+    return false
   }
 
   document.getElementById('btn-start').addEventListener('click', () => {

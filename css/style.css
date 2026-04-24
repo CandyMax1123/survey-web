@@ -322,6 +322,10 @@ a { color: var(--primary); text-decoration: none; }
 .question-block {
   margin-bottom: 4px;
 }
+.question-block.error {
+  outline: 2px solid var(--danger);
+  border-radius: var(--radius);
+}
 .question-block-title {
   font-size: 1rem;
   font-weight: 600;
